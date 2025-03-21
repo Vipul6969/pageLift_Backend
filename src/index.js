@@ -20,8 +20,12 @@ async function crawlWebsite(url) {
 
     const $ = cheerio.load(data);
 
-    const title = $("title").text();
-    const description = $('meta[name="description"]').attr("content") || "";
+    const ogTitle = $('meta[property="og:title"]').attr("content");
+    const ogDescription = $('meta[property="og:description"]').attr("content");
+    const title = $("title").text() || ogTitle || "";
+    const description =
+      $('meta[name="description"]').attr("content") || ogDescription || "";
+
     const links = $("a")
       .map((i, el) => $(el).attr("href"))
       .get()
@@ -85,8 +89,6 @@ ${JSON.stringify(metadata, null, 2)}
     return { category: "unknown", competitors: [] };
   }
 }
-
-
 
 async function getSeoScore(metadata) {
   const prompt = `Based on this metadata, give an SEO score between 0 to 100 and explain why:\n\n${JSON.stringify(
@@ -192,13 +194,34 @@ module.exports = async function (context, req) {
     console.log("Competitor URLs:", competitors);
 
     // Step 5: Crawl competitors
-    const competitorData = await Promise.all(
-      competitors.map(async (compUrl) => {
+    // Crawl each competitor site safely and skip those that fail
+    const competitorData = [];
+
+    for (const compUrl of competitors) {
+      try {
         const meta = await crawlWebsite(compUrl);
+
+        if (meta.error) {
+          console.warn(`Skipping ${compUrl}: ${meta.error}`);
+          continue;
+        }
+
         const score = await getSeoScore(meta);
-        return { url: compUrl, metadata: meta, seoScore: score };
-      })
-    );
+        competitorData.push({
+          url: compUrl,
+          metadata: meta,
+          seoScore: score,
+        });
+      } catch (err) {
+        console.warn(`Error crawling ${compUrl}:`, err.message);
+        continue;
+      }
+    }
+
+    // Ensure we have at least 2 valid competitor results
+    if (competitorData.length < 2) {
+      throw new Error("Failed to crawl at least 2 competitor websites.");
+    }
 
     // Step 6: Get AI SEO Suggestions
     const suggestions = await getSuggestions(
