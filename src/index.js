@@ -2,14 +2,14 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const https = require("https");
 const Together = require("together-ai").default;
-// const { getJson } = require("serpapi");
+
 
 // ========== CONFIG ========== //
 const client = new Together({
   apiKey: "ae4e530d1b33a6b8a2e49de9adcafeeac1a29b1b1429bd6150e9f933989dd453",
 });
-const SERP_API_KEY =
-  "224791e1f04dc6ed46ce6ceb3dc3db718a99810ae218d34bfc41235f5422ba75";
+
+const PAGESPEED_API_KEY = "AIzaSyCQnKHFmNxIiFditub-d01O0WZeSoahfAc";
 
 // ========== HANDLERS ========== //
 async function crawlWebsite(url) {
@@ -19,6 +19,7 @@ async function crawlWebsite(url) {
 
     const { data } = await axios.get(url, {
       httpsAgent: agent,
+      validateStatus: (status) => status < 400,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -29,7 +30,6 @@ async function crawlWebsite(url) {
     });
 
     const $ = cheerio.load(data);
-
     const ogTitle = $('meta[property="og:title"]').attr("content");
     const ogDescription = $('meta[property="og:description"]').attr("content");
     const title = $("title").text() || ogTitle || "";
@@ -42,10 +42,37 @@ async function crawlWebsite(url) {
       .filter(Boolean)
       .slice(0, 10);
 
-    return { title, description, links };
+    const bodyText = $("body").text().replace(/\s+/g, " ").trim(); // Extract and clean body text
+
+    return { title, description, links, bodyText };
   } catch (err) {
     return { error: `Error crawling ${url}: ${err.message}` };
   }
+}
+
+async function analyzePageSpeed(url) {
+  try {
+    const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(
+      url
+    )}&key=${PAGESPEED_API_KEY}`;
+    const { data } = await axios.get(apiUrl);
+    return {
+      performance: data.lighthouseResult.categories.performance.score * 100,
+      suggestions:
+        data.lighthouseResult.audits["diagnostics"]?.details?.items || [],
+    };
+  } catch (err) {
+    return { error: "Failed to fetch PageSpeed insights." };
+  }
+}
+
+const TextStatistics = require("text-statistics");
+
+function analyzeReadability(text) {
+  if (!text) return { readabilityScore: "N/A (No content found)" };
+  return {
+    readabilityScore: new TextStatistics(text).fleschKincaidReadingEase(),
+  };
 }
 
 async function callTogetherAI(prompt) {
@@ -58,13 +85,15 @@ async function callTogetherAI(prompt) {
   let fullMessage = "";
 
   for await (const chunk of stream) {
-    fullMessage += chunk.choices[0]?.delta?.content || "";
+    fullMessage += chunk.choices?.[0]?.delta?.content || "";
   }
 
-  // Always return as a string suggestion
+  if (!fullMessage) {
+    return { suggestion: "No response from AI" };
+  }
+
   try {
     const parsed = JSON.parse(fullMessage);
-    console.log(parsed);
     return typeof parsed === "string" ? { suggestion: parsed } : parsed;
   } catch {
     return { suggestion: fullMessage.trim() };
@@ -146,30 +175,6 @@ Suggestions:
   return await callTogetherAI(prompt);
 }
 
-// async function searchTopCompetitors(purpose) {
-//   return new Promise((resolve, reject) => {
-//     getJson(
-//       {
-//         engine: "google",
-//         q: purpose,
-//         api_key: SERP_API_KEY,
-//       },
-//       (json) => {
-//         if (!json || !json.organic_results) {
-//           return reject(new Error("No search results found"));
-//         }
-
-//         const urls = json.organic_results
-//           .map((r) => r.link)
-//           .filter((link) => link && link.startsWith("http"))
-//           .slice(0, 2);
-
-//         resolve(urls);
-//       }
-//     );
-//   });
-// }
-
 // ========== MAIN AZURE FUNCTION ========== //
 module.exports = async function (context, req) {
   const url = req.query.url || req.body?.url;
@@ -228,16 +233,15 @@ module.exports = async function (context, req) {
       }
     }
 
-    // Ensure we have at least 2 valid competitor results
-    if (competitorData.length < 2) {
-      throw new Error("Failed to crawl at least 2 competitor websites.");
-    }
-
     // Step 6: Get AI SEO Suggestions
     const suggestions = await getSuggestions(
       userMeta,
       competitorData.map((c) => c.metadata)
     );
+
+    const pageSpeed = await analyzePageSpeed(url);
+    const readability = await analyzeReadability(userMeta.bodyText);
+
 
     // Final Output
     context.res = {
@@ -252,6 +256,8 @@ module.exports = async function (context, req) {
         },
         competitors: competitorData,
         suggestions,
+        pageSpeed,
+        readability,
       },
     };
   } catch (err) {
