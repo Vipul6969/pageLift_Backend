@@ -2,7 +2,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const https = require("https");
 const Together = require("together-ai").default;
-
+const TextStatistics = require("text-statistics");
 
 // ========== CONFIG ========== //
 const client = new Together({
@@ -42,7 +42,7 @@ async function crawlWebsite(url) {
       .filter(Boolean)
       .slice(0, 10);
 
-    const bodyText = $("body").text().replace(/\s+/g, " ").trim(); // Extract and clean body text
+    const bodyText = $("body").text().replace(/\s+/g, " ").trim();
 
     return { title, description, links, bodyText };
   } catch (err) {
@@ -65,8 +65,6 @@ async function analyzePageSpeed(url) {
     return { error: "Failed to fetch PageSpeed insights." };
   }
 }
-
-const TextStatistics = require("text-statistics");
 
 function analyzeReadability(text) {
   if (!text) return { readabilityScore: "N/A (No content found)" };
@@ -155,10 +153,8 @@ async function getSeoScore(metadata) {
 async function getSuggestions(userMeta, competitorMetaList) {
   const prompt = `
 You are an expert SEO consultant.
-
 Compare the following user's website metadata with two competitors.
-Give 3–5 **clear, actionable** suggestions that can **improve the user's SEO**, using competitor insights.
-Only give suggestions that are helpful and realistic to implement.
+Give 3–5 **clear, actionable** suggestions for SEO improvement.
 
 User Website Metadata:
 ${JSON.stringify(userMeta, null, 2)}
@@ -178,6 +174,7 @@ Suggestions:
 // ========== MAIN AZURE FUNCTION ========== //
 module.exports = async function (context, req) {
   const url = req.query.url || req.body?.url;
+  const competitorUrls = req.body?.competitorUrls || []; // Accept competitor URLs from user input
 
   if (!url || !url.startsWith("http")) {
     context.res = { status: 400, body: "Invalid or missing URL." };
@@ -186,64 +183,40 @@ module.exports = async function (context, req) {
 
   try {
     console.log(`Processing ${url}`);
-    // Step 1: Crawl user website
     const userMeta = await crawlWebsite(url);
 
-    // Step 2: Get Purpose/Category
-    // Step 2: Get Competitor URLs using AI (and purpose)
-    const { category: purpose, competitors } = await getPurpose(userMeta);
-
-    console.log("Competitor URLs:", competitors);
+    const { category: purpose, competitors } = competitorUrls.length
+      ? competitorUrls
+      : await getPurpose(userMeta);
 
     if (!competitors || competitors.length < 2) {
       throw new Error("Failed to retrieve competitor URLs.");
     }
 
-    console.log("Detected Purpose:", purpose);
-
-    // Step 3: SEO Score for user
-    const userScore = await getSeoScore(userMeta);
-
-    // Step 4: Search competitors
-    // const competitors = await searchTopCompetitors(purpose.toLowerCase());
     console.log("Competitor URLs:", competitors);
-
-    // Step 5: Crawl competitors
-    // Crawl each competitor site safely and skip those that fail
+    const userScore = await getSeoScore(userMeta);
     const competitorData = [];
 
     for (const compUrl of competitors) {
       try {
         const meta = await crawlWebsite(compUrl);
-
-        if (meta.error) {
-          console.warn(`Skipping ${compUrl}: ${meta.error}`);
-          continue;
-        }
+        if (meta.error) continue;
 
         const score = await getSeoScore(meta);
-        competitorData.push({
-          url: compUrl,
-          metadata: meta,
-          seoScore: score,
-        });
+        competitorData.push({ url: compUrl, metadata: meta, seoScore: score });
       } catch (err) {
-        console.warn(`Error crawling ${compUrl}:`, err.message);
-        continue;
+        console.warn(`Skipping ${compUrl}:`, err.message);
       }
     }
 
-    // Step 6: Get AI SEO Suggestions
     const suggestions = await getSuggestions(
       userMeta,
-      competitorData.map((c) => c.metadata)
+      competitorData.slice(0, 2).map((c) => c.metadata)
     );
 
     const pageSpeed = await analyzePageSpeed(url);
     const readability = await analyzeReadability(userMeta.bodyText);
 
-
-    // Final Output
     context.res = {
       status: 200,
       body: {
