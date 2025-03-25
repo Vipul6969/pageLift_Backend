@@ -2,7 +2,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const https = require("https");
 const Together = require("together-ai").default;
-const { getJson } = require("serpapi");
+// const { getJson } = require("serpapi");
 
 // ========== CONFIG ========== //
 const client = new Together({
@@ -73,12 +73,12 @@ async function callTogetherAI(prompt) {
 
 async function getPurpose(metadata) {
   const prompt = `Given this metadata, classify the website's **main industry or category** using a single word or phrase, such as "e-commerce", "news", "education", "travel", etc.
-Then, list **two URLs of real-world websites** that serve a similar purpose or are competitors in that category.
+Then, list **four URLs of real-world websites** that serve a similar purpose or are competitors in that category.
 Return only JSON with this format:
 
 {
   "category": "<industry>",
-  "competitors": ["https://...", "https://..."]
+  "competitors": ["https://...", "https://...", "https://...", "https://..."]
 }
 
 Here is the metadata:
@@ -91,7 +91,7 @@ ${JSON.stringify(metadata, null, 2)}
   if (
     result &&
     Array.isArray(result.competitors) &&
-    result.competitors.length >= 2
+    result.competitors.length >= 4
   ) {
     return result;
   } else {
