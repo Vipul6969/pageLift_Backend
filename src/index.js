@@ -128,7 +128,7 @@ ${JSON.stringify(metadata, null, 2)}
 }
 
 async function getSeoScore(metadata) {
-  const prompt = `Based on this metadata, give an SEO score between 0 to 100 and explain why:\n\n${JSON.stringify(
+  const prompt = `Based on this metadata, give an SEO score between 0 to 100 and explain in brief why:\n\n${JSON.stringify(
     metadata
   )}\n\nFormat:\nScore: <number>\nExplanation: <text>`;
   const response = await callTogetherAI(prompt);
@@ -152,9 +152,9 @@ async function getSeoScore(metadata) {
 
 async function getSuggestions(userMeta, competitorMetaList) {
   const prompt = `
-You are an expert SEO consultant.
+You are an expert SEO consultant and you have a great knowledgeof how to analyze SEO.
 Compare the following user's website metadata with two competitors.
-Give 3–5 **clear, actionable** suggestions for SEO improvement.
+Give 3–5 **clear, actionable** suggestions for SEO improvement of User's Website after comparing with competitors.
 
 User Website Metadata:
 ${JSON.stringify(userMeta, null, 2)}
