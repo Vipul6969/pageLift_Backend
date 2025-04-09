@@ -171,6 +171,35 @@ Suggestions:
   return await callTogetherAI(prompt);
 }
 
+async function getEstimation(userMeta, suggestions, seoScore) {
+  const prompt = `
+You are an expert SEO consultant with deep experience in analyzing websites and projecting SEO performance.
+
+A user has shared the following details about their website:
+
+- Current SEO Score: ${seoScore}
+- Website Metadata:
+${JSON.stringify(userMeta, null, 2)}
+
+- Suggestions for SEO Improvement:
+${JSON.stringify(suggestions, null, 2)}
+
+Your task is to estimate the **exact percentage increase** in the SEO score if the user applies all the suggestions effectively.
+
+🚫 DO NOT explain your reasoning.  
+🚫 DO NOT include any text, symbols, or explanation.  
+✅ JUST respond with a single number like: 12 or 13 etc.  
+
+(That number should represent the **estimated increase** in percentage points of the SEO score, NOT the final score.)
+
+Respond only with the number.
+`;
+
+  return await callTogetherAI(prompt);
+}
+
+
+
 // ========== MAIN AZURE FUNCTION ========== //
 module.exports = async function (context, req) {
   const url = req.query.url || req.body?.url;
@@ -214,6 +243,8 @@ module.exports = async function (context, req) {
       competitorData.slice(0, 2).map((c) => c.metadata)
     );
 
+    const estimationGrowth = await getEstimation(userMeta, suggestions, userScore.score);
+
     const pageSpeed = await analyzePageSpeed(url);
     const readability = await analyzeReadability(userMeta.bodyText);
 
@@ -231,6 +262,7 @@ module.exports = async function (context, req) {
         suggestions,
         pageSpeed,
         readability,
+        estimationGrowth,
       },
     };
   } catch (err) {
