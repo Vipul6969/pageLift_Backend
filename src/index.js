@@ -6,7 +6,7 @@ const TextStatistics = require("text-statistics");
 
 // ========== CONFIG ========== //
 const client = new Together({
-  apiKey: "3e8ed4fa41143cfc7a01fc8dd09584e32f7756d43ac7af87f95e2ecf2c87f58e",
+  apiKey: "972406cf8cf369551ad93c76139a5600455ef76cb84db0e971d28794029f76c5",
 });
 
 const PAGESPEED_API_KEY = "AIzaSyCQnKHFmNxIiFditub-d01O0WZeSoahfAc";
